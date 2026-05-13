@@ -10,7 +10,7 @@ Nexus Mods 合集下载器。
 
 ## 功能
 
-- **登陆**：从浏览器自动读 cookie，不用手动 F12
+- **登录**：从 Chrome / Firefox / Safari / Edge 自动读 cookie，不用手动 F12
 - **安装合集**：备份 → 下载 → 解压 → 配置路由，一条龙
 - **更新合集**：逐个查最新版，删旧下新
 - **仅下载**：只要 zip，不解压，纯囤货
@@ -39,9 +39,9 @@ uv sync
 
 ---
 
-## 登陆
+## 登录
 
-先浏览器登 [nexusmods.com](https://www.nexusmods.com/)，然后：
+先在浏览器登录 [nexusmods.com](https://www.nexusmods.com/)，然后：
 
 ```bash
 uv run tasan-nexus login
@@ -63,7 +63,7 @@ uv run tasan-nexus login
 ## 用法
 
 ```bash
-# 登陆
+# 登录
 uv run tasan-nexus login
 
 # 安装合集（备份→下载→解压→配置路由）
@@ -126,7 +126,7 @@ uv run tasan-nexus list
 
 | 文件 | 说明 |
 |---|---|
-| `nexus_cookies.json` | 登陆态 |
+| `nexus_cookies.json` | 登录态 |
 | `mods_list.json` | 已安装合集注册表 `{url: {name, installed_at, updated_at, installed}}` |
 | `.downloaded.json` | 合集清单 `{file_id: {name, version, optional, mod_id, file_title}}` |
 | `config.json` | 用户配置（可选） |
