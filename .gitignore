@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Nexus Mods session cookies (sensitive)
+nexus_cookies.json
+
+# User data
+mods_list.json
+config.json

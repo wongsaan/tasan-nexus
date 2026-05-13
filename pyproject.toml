@@ -1,0 +1,25 @@
+[project]
+name = "tasan-nexus"
+version = "0.1.0"
+description = "Nexus Mods collection downloader"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "browser-cookie3>=0.20.1",
+    "httpx>=0.28.1",
+    "lz4>=4.4.5",
+    "py7zr>=1.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nexus"]
+
+[project.scripts]
+tasan-nexus = "nexus.main:main"
