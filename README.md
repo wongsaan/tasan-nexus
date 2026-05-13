@@ -49,12 +49,14 @@ uv run tasan-nexus login
 
 Auto-reads cookies from your browser and saves them to `nexus_cookies.json`.
 
-> Manual: F12 → Application → Cookies, copy `nexusmods_session`, `__cf_bm`, `cf_clearance` and create `nexus_cookies.json`:
+> Manual: F12 → Application → Cookies, copy **all** cookies from nexusmods.com and create `nexus_cookies.json`:
 > ```json
 > [
 >   {"name": "nexusmods_session", "value": "..."},
+>   {"name": "nexusmods_session_refresh", "value": "..."},
 >   {"name": "__cf_bm", "value": "..."},
->   {"name": "cf_clearance", "value": "..."}
+>   {"name": "cf_clearance", "value": "..."},
+>   {"name": "__cflb", "value": "..."}
 > ]
 > ```
 

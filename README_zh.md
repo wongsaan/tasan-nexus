@@ -49,12 +49,14 @@ uv run tasan-nexus login
 
 自动从 Chrome / Firefox / Safari / Edge 读 cookie，存 `nexus_cookies.json`。
 
-> 手动方式：F12 → Application → Cookies，复制 `nexusmods_session`、`__cf_bm`、`cf_clearance` 三个值，创建 `nexus_cookies.json`：
+> 手动方式：F12 → Application → Cookies，复制 nexusmods.com 域名下的**全部** cookie，创建 `nexus_cookies.json`：
 > ```json
 > [
 >   {"name": "nexusmods_session", "value": "..."},
+>   {"name": "nexusmods_session_refresh", "value": "..."},
 >   {"name": "__cf_bm", "value": "..."},
->   {"name": "cf_clearance", "value": "..."}
+>   {"name": "cf_clearance", "value": "..."},
+>   {"name": "__cflb", "value": "..."}
 > ]
 > ```
 

@@ -3,12 +3,21 @@ import shutil
 import time
 from pathlib import Path
 from urllib.parse import unquote
+
 import httpx
 
 from nexus.config import get as config_get
-from nexus.extractor import _is_config_preset, extract_mod, _list_archive
+from nexus.extractor import is_config_preset, extract_mod, list_archive
 
 MANIFEST_FILE = ".downloaded.json"
+
+STATUS_SUCCESS = "success"
+STATUS_SKIPPED = "skipped"
+STATUS_UPDATED = "updated"
+STATUS_FAILED = "failed"
+STATUS_MISSING = "missing"
+STATUS_OUTDATED = "outdated"
+STATUS_OK = "ok"
 
 
 def sync_manifest(mods: list[dict], collection_dir: Path):
@@ -108,40 +117,50 @@ def download_mod(mod: dict, collection_dir: Path, progress: str = "", game_id: s
 
     if not file_id:
         print(f"  {progress}⚠ {name} — no file_id, skipping")
-        return "skipped"
+        return STATUS_SKIPPED
 
     target_dir = _mod_dir(collection_dir, optional)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    status = check_mod_status(mod, collection_dir)
+    manifest_path = collection_dir / MANIFEST_FILE
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text())
+        if not isinstance(manifest, dict):
+            manifest = {}
+    else:
+        manifest = {}
 
-    if status == "ok":
+    status = check_mod_status(mod, collection_dir, data=manifest)
+
+    if status == STATUS_OK:
         if game_dir:
             _extract_cached(collection_dir, file_id, optional, game_dir, name)
         print(f"  {progress}⏭ {name} — up to date")
-        return "skipped"
+        return STATUS_SKIPPED
 
-    if status == "outdated":
+    if status == STATUS_OUTDATED:
         print(f"  {progress}\U0001f504 {name} — update available")
 
-    if status == "missing":
+    if status == STATUS_MISSING:
         existing = _find_global(file_id, version)
         if existing:
             target = target_dir / existing.name
             if existing.resolve() == target.resolve():
                 # Already in the target directory, just record it
-                _record_downloaded(file_id, existing.name, version, collection_dir, optional, mod_id=mod_id, file_title=file_name)
-                _cleanup_same_mod(collection_dir, mod_id, keep=file_id, file_title=file_name)
+                _record_downloaded(file_id, existing.name, version, collection_dir, optional, mod_id=mod_id, file_title=file_name, data=manifest)
+                _cleanup_same_mod(collection_dir, mod_id, keep=file_id, file_title=file_name, data=manifest)
+                manifest_path.write_text(json.dumps(manifest, indent=2))
                 if game_dir:
                     _maybe_extract(target, game_dir, name)
-                return "success"
+                return STATUS_SUCCESS
             shutil.copy2(existing, target)
             print(f"  {progress}\U0001f4cb {name} (copied from other collection)")
-            _record_downloaded(file_id, existing.name, version, collection_dir, optional, mod_id=mod_id, file_title=file_name)
-            _cleanup_same_mod(collection_dir, mod_id, keep=file_id, file_title=file_name)
+            _record_downloaded(file_id, existing.name, version, collection_dir, optional, mod_id=mod_id, file_title=file_name, data=manifest)
+            _cleanup_same_mod(collection_dir, mod_id, keep=file_id, file_title=file_name, data=manifest)
+            manifest_path.write_text(json.dumps(manifest, indent=2))
             if game_dir:
                 _maybe_extract(target, game_dir, name)
-            return "success"
+            return STATUS_SUCCESS
 
     label = f"  {progress}\U0001f4e5 {name} [optional]" if optional else f"  {progress}\U0001f4e5 {name}"
     print(label)
@@ -149,7 +168,7 @@ def download_mod(mod: dict, collection_dir: Path, progress: str = "", game_id: s
     cookies = _load_cookies()
     if not cookies:
         print(f"       ❌ cookies file not found ({config_get('cookies_file')})")
-        return "failed"
+        return STATUS_FAILED
 
     try:
         with httpx.Client(cookies=cookies, timeout=httpx.Timeout(300, connect=30), follow_redirects=True) as client:
@@ -160,17 +179,17 @@ def download_mod(mod: dict, collection_dir: Path, progress: str = "", game_id: s
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Referer": f"https://www.nexusmods.com/{game_domain}/mods/{mod_id}?tab=files&file_id={file_id}",
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
                 },
             )
             if resp.status_code != 200:
                 print(f"       ❌ failed to get download URL (HTTP {resp.status_code})")
-                return "failed"
+                return STATUS_FAILED
 
             cdn_url = resp.json().get("url", "")
             if not cdn_url:
                 print(f"       ❌ no download URL returned")
-                return "failed"
+                return STATUS_FAILED
 
             filename = unquote(cdn_url.split("/")[-1].split("?")[0])
             target = target_dir / filename
@@ -215,7 +234,7 @@ def download_mod(mod: dict, collection_dir: Path, progress: str = "", game_id: s
                 if partfile.exists():
                     partfile.unlink()
                 print(f"       ❌ download failed")
-                return "failed"
+                return STATUS_FAILED
 
             partfile.rename(target)
             size_kb = target.stat().st_size // 1024
@@ -223,14 +242,14 @@ def download_mod(mod: dict, collection_dir: Path, progress: str = "", game_id: s
 
     except Exception as e:
         print(f"       ❌ {e}")
-        return "failed"
+        return STATUS_FAILED
 
-    _record_downloaded(file_id, filename, version, collection_dir, optional, mod_id=mod_id, file_title=file_name)
-    # Remove any other entries for the same mod (matching mod_id + file_title)
-    _cleanup_same_mod(collection_dir, mod_id, keep=file_id, file_title=file_name)
+    _record_downloaded(file_id, filename, version, collection_dir, optional, mod_id=mod_id, file_title=file_name, data=manifest)
+    _cleanup_same_mod(collection_dir, mod_id, keep=file_id, file_title=file_name, data=manifest)
+    manifest_path.write_text(json.dumps(manifest, indent=2))
     if game_dir:
         _maybe_extract(target, game_dir, name)
-    return "updated" if status == "outdated" else "success"
+    return STATUS_UPDATED if status == STATUS_OUTDATED else STATUS_SUCCESS
 
 
 def _maybe_extract(zip_path: Path, game_dir: Path, name: str):
@@ -240,12 +259,12 @@ def _maybe_extract(zip_path: Path, game_dir: Path, name: str):
         print(f"       ⏭ skip extract (in skip_extract)")
         return
     try:
-        if _is_config_preset(zip_path):
+        if is_config_preset(zip_path):
             return
         extract_mod(zip_path, game_dir)
         print(f"       \U0001f4e6 extracted")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"       ⚠ extract failed for {name}: {e}")
 
 
 def _extract_cached(collection_dir: Path, file_id: str, optional: bool, game_dir: Path, name: str):
@@ -263,8 +282,7 @@ def _extract_cached(collection_dir: Path, file_id: str, optional: bool, game_dir
     zip_path = _mod_dir(collection_dir, optional) / zip_name
     if not zip_path.exists():
         return
-    # Only extract if the mod folder doesn't already exist in game dir
-    names = _list_archive(zip_path)
+    names = list_archive(zip_path)
     top_dirs = {n.split("/")[0] for n in names if "/" in n and n.split("/")[0]}
     already = all((game_dir / d).exists() for d in top_dirs) if top_dirs else False
     if not already:
@@ -303,62 +321,71 @@ def _load_cookies() -> dict:
     return {c["name"]: c["value"] for c in cookies_data}
 
 
-def check_mod_status(mod: dict, collection_dir: Path) -> str:
+def check_mod_status(mod: dict, collection_dir: Path, data: dict | None = None) -> str:
     """Check download status. Returns 'missing' | 'outdated' | 'ok'."""
     file_id = mod.get("file_id", "")
     version = mod.get("version", "")
     if not file_id:
-        return "missing"
+        return STATUS_MISSING
 
-    manifest_path = collection_dir / MANIFEST_FILE
-    if not manifest_path.exists():
-        return "missing"
-
-    data = json.loads(manifest_path.read_text())
-    if not isinstance(data, dict) or file_id not in data:
-        return "missing"
+    if data is not None:
+        if file_id not in data:
+            return STATUS_MISSING
+    else:
+        manifest_path = collection_dir / MANIFEST_FILE
+        if not manifest_path.exists():
+            return STATUS_MISSING
+        data = json.loads(manifest_path.read_text())
+        if not isinstance(data, dict) or file_id not in data:
+            return STATUS_MISSING
 
     entry = data[file_id]
     if isinstance(entry, str):
-        return "outdated"
+        return STATUS_OUTDATED
 
     if entry.get("version") != version:
-        return "outdated"
+        return STATUS_OUTDATED
 
     fname = entry.get("name", "")
     if not fname:
-        return "missing"
+        return STATUS_MISSING
 
     optional = entry.get("optional", False)
     if not (_mod_dir(collection_dir, optional) / fname).exists():
-        return "missing"
+        return STATUS_MISSING
 
-    return "ok"
+    return STATUS_OK
 
 
-def _record_downloaded(file_id: str, filename: str, version: str, collection_dir: Path, optional: bool = False, mod_id: str = "", file_title: str = ""):
+def _record_downloaded(file_id: str, filename: str, version: str, collection_dir: Path, optional: bool = False, mod_id: str = "", file_title: str = "", data: dict | None = None):
     """Record file_id -> {name, version, optional, mod_id, file_title} mapping."""
+    entry = {"name": filename, "version": version, "optional": optional, "mod_id": mod_id, "file_title": file_title}
+    if data is not None:
+        data[file_id] = entry
+        return
     manifest = collection_dir / MANIFEST_FILE
     if manifest.exists():
-        data = json.loads(manifest.read_text())
-        if isinstance(data, list):
-            data = {}
+        loaded = json.loads(manifest.read_text())
+        if isinstance(loaded, list):
+            loaded = {}
     else:
-        data = {}
-    data[file_id] = {"name": filename, "version": version, "optional": optional, "mod_id": mod_id, "file_title": file_title}
-    manifest.write_text(json.dumps(data, indent=2))
+        loaded = {}
+    loaded[file_id] = entry
+    manifest.write_text(json.dumps(loaded, indent=2))
 
 
-def _cleanup_same_mod(collection_dir: Path, mod_id: str, keep: str, file_title: str = ""):
+def _cleanup_same_mod(collection_dir: Path, mod_id: str, keep: str, file_title: str = "", data: dict | None = None):
     """Remove manifest entries and files for the same mod (matching mod_id + file_title) except the one being kept."""
     if not mod_id:
         return
-    manifest_path = collection_dir / MANIFEST_FILE
-    if not manifest_path.exists():
-        return
-    data = json.loads(manifest_path.read_text())
-    if not isinstance(data, dict):
-        return
+    write_back = data is None
+    if data is None:
+        manifest_path = collection_dir / MANIFEST_FILE
+        if not manifest_path.exists():
+            return
+        data = json.loads(manifest_path.read_text())
+        if not isinstance(data, dict):
+            return
     changed = False
     for fid, entry in list(data.items()):
         if fid == keep:
@@ -367,15 +394,14 @@ def _cleanup_same_mod(collection_dir: Path, mod_id: str, keep: str, file_title: 
             continue
         if entry.get("mod_id") != mod_id:
             continue
-        # Only clean up if file_title matches (same actual mod), or if the old entry
-        # predates file_title and the new entry also has no file_title (backward compat).
         entry_title = entry.get("file_title", "")
         if entry_title and file_title and entry_title != file_title:
             continue
         _remove_entry_file(collection_dir, entry)
         del data[fid]
         changed = True
-    if changed:
+    if changed and write_back:
+        manifest_path = collection_dir / MANIFEST_FILE
         manifest_path.write_text(json.dumps(data, indent=2))
 
 

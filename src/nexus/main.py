@@ -5,7 +5,10 @@ from pathlib import Path
 
 from nexus.collection import parse_collection, fetch_latest_versions
 from nexus.config import get as config_get
-from nexus.downloader import download_mod, sync_manifest, remove_manifest_entry
+from nexus.downloader import (
+    download_mod, sync_manifest, remove_manifest_entry,
+    STATUS_SUCCESS, STATUS_UPDATED, STATUS_SKIPPED, STATUS_FAILED,
+)
 from nexus.extractor import backup_mods, route_all_configs
 from nexus.modslist import add as modslist_add, load as modslist_load
 
@@ -50,11 +53,11 @@ def download_collection(collection_name: str, mods: list[dict], game_dir: Path |
         for i, mod in enumerate(mods, 1):
             progress = f"[{i}/{total}] "
             result = download_mod(mod, collection_dir, progress, game_dir=game_dir)
-            if result == "success":
+            if result == STATUS_SUCCESS:
                 success += 1
-            elif result == "updated":
+            elif result == STATUS_UPDATED:
                 updated += 1
-            elif result == "skipped":
+            elif result == STATUS_SKIPPED:
                 skipped += 1
             else:
                 failed += 1
@@ -181,21 +184,22 @@ def cmd_login():
         ("Edge", browser_cookie3.edge),
     ]
 
+    required = ["nexusmods_session", "__cf_bm", "cf_clearance"]
+
     for name, fn in browsers:
         try:
             cj = fn(domain_name="nexusmods.com")
             cookies = list(cj)
             if cookies:
-                needed = ["nexusmods_session", "__cf_bm", "cf_clearance"]
-                data = [{"name": c.name, "value": c.value} for c in cookies if c.name in needed]
-                found = [c["name"] for c in data]
-                missing = [n for n in needed if n not in found]
+                data = [{"name": c.name, "value": c.value} for c in cookies]
+                found = {c["name"] for c in data}
+                missing = [n for n in required if n not in found]
                 if not missing:
                     Path(config_get("cookies_file")).write_text(json.dumps(data, indent=2))
                     print(f"Got {len(data)} cookies from {name} → {config_get('cookies_file')}")
                     return
                 else:
-                    print(f"{name}: found {found}, missing {missing}")
+                    print(f"{name}: found {sorted(found)}, missing {missing}")
         except Exception:
             pass
 

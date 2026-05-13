@@ -10,8 +10,26 @@ from nexus.config import get as config_get
 GRAPHQL_URL = "https://api-router.nexusmods.com/graphql"
 HEADERS = {
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
 }
+
+
+def _graphql(query: str, variables: dict | None = None) -> dict | None:
+    """Post a GraphQL query with retry. Returns parsed JSON or None on failure."""
+    payload = {"query": query}
+    if variables:
+        payload["variables"] = variables
+    for attempt in range(5):
+        try:
+            r = httpx.post(GRAPHQL_URL, json=payload, headers=HEADERS, timeout=30)
+            return r.json()
+        except Exception as e:
+            if attempt < 4:
+                print(f"  API request failed, retry {attempt + 1}/5... ({e})")
+                _time.sleep(3)
+            else:
+                print(f"  API request failed after 5 attempts: {e}")
+                return None
 
 
 def parse_collection(collection_url: str) -> tuple[str, list[dict]]:
@@ -50,22 +68,9 @@ def parse_collection(collection_url: str) -> tuple[str, list[dict]]:
     }
     """
 
-    for attempt in range(5):
-        try:
-            r = httpx.post(
-                GRAPHQL_URL,
-                json={"query": query, "variables": {"slug": slug, "domain": game}},
-                headers=HEADERS,
-                timeout=30,
-            )
-            data = r.json()
-            break
-        except Exception as e:
-            if attempt < 4:
-                print(f"  API request failed, retry {attempt + 1}/5... ({e})")
-                _time.sleep(3)
-            else:
-                raise
+    data = _graphql(query, variables={"slug": slug, "domain": game})
+    if data is None:
+        raise RuntimeError("GraphQL API unreachable after 5 attempts")
 
     if "errors" in data:
         msgs = [e.get("message", "") for e in data["errors"]]
@@ -140,22 +145,7 @@ def fetch_latest_versions(mods: list[dict], game_id: int | None = None) -> dict[
 
         query = "query {" + " ".join(aliases) + "}"
 
-        for attempt in range(5):
-            try:
-                r = httpx.post(
-                    GRAPHQL_URL,
-                    json={"query": query},
-                    headers=HEADERS,
-                    timeout=30,
-                )
-                data = r.json()
-                break
-            except Exception:
-                if attempt < 4:
-                    _time.sleep(3)
-                else:
-                    data = None
-                    break
+        data = _graphql(query)
 
         if data is None:
             if i + batch_size < len(mods):

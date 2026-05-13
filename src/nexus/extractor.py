@@ -30,7 +30,7 @@ def _find_rar_tool() -> str | None:
     return None
 
 
-def _list_archive(path: Path) -> list[str]:
+def list_archive(path: Path) -> list[str]:
     """List all file paths inside an archive. Supports zip / 7z / rar."""
     ext = path.suffix.lower()
     if ext == ".zip":
@@ -52,7 +52,6 @@ def _list_archive(path: Path) -> list[str]:
         for line in r.stdout.strip().split("\n"):
             parts = line.split()
             if len(parts) >= 6:
-                # Path is everything after the first 5 fixed columns
                 lines.append(" ".join(parts[5:]))
         return lines
     # bsdtar / unrar
@@ -111,10 +110,10 @@ def _open_archive(path: Path, filename: str) -> bytes:
         return (Path(tmp) / filename).read_bytes()
 
 
-def _is_config_preset(path: Path) -> bool:
+def is_config_preset(path: Path) -> bool:
     """Check if archive is a config preset: no dll, no resource files, only json."""
     try:
-        names = _list_archive(path)
+        names = list_archive(path)
     except Exception:
         return False
     has_config = False
@@ -135,7 +134,7 @@ def _is_config_preset(path: Path) -> bool:
 
 def extract_mod(zip_path: Path, game_dir: Path) -> str:
     """Extract a mod archive to game Mods dir, cleaning old folders first."""
-    names = _list_archive(zip_path)
+    names = list_archive(zip_path)
     top_dirs: set[str] = set()
     for n in names:
         # Normalize path separators (Windows 7z may output \\)
@@ -153,7 +152,7 @@ def extract_mod(zip_path: Path, game_dir: Path) -> str:
 def route_configs(zip_path: Path, game_dir: Path) -> list[str]:
     """Route config.json files to game dir using the exact paths from the zip."""
     routed = []
-    names = _list_archive(zip_path)
+    names = list_archive(zip_path)
 
     for n in names:
         if n.endswith("/") or n.endswith("\\"):
@@ -175,17 +174,17 @@ def route_all_configs(collection_dir: Path, game_dir: Path):
     """Scan collection dir for config presets and route them all."""
     for zip_path in collection_dir.glob("*.zip"):
         try:
-            if _is_config_preset(zip_path):
+            if is_config_preset(zip_path):
                 route_configs(zip_path, game_dir)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"     ⚠ config routing failed for {zip_path.name}: {e}")
     opt_dir = collection_dir / "Optional"
     if opt_dir.exists():
         for zip_path in opt_dir.glob("*.zip"):
             try:
-                if _is_config_preset(zip_path):
+                if is_config_preset(zip_path):
                     route_configs(zip_path, game_dir)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"     ⚠ config routing failed for {zip_path.name}: {e}")
 
 
